@@ -6,6 +6,9 @@ from bokeh.layouts import column
 from bokeh.models import Slider
 from bokeh.plotting import figure
 from bokeh.io import export_svg
+from bokeh.palettes import Viridis256
+from scipy.interpolate import interp1d
+
 from selenium import webdriver
 import chromedriver_binary  # Adds chromedriver binary to path
 import numpy as np
@@ -16,8 +19,9 @@ r = []
 
 # Créer la figure
 plot = figure(width=1200, height=1200, title="Cercles dynamiques", output_backend="svg", background_fill_color=None, border_fill_color=None)
-
-import numpy as np
+plot.xgrid.grid_line_color = None
+plot.ygrid.grid_line_color = None
+plot.axis.axis_line_color = None
 
 def hex_to_rgb(hex_color):
     """Convertit une couleur hexadécimale en RGB."""
@@ -86,7 +90,32 @@ def update_circles(attr, old, new):
     y.clear()
     r.clear()
 
-    gradient = generate_sampled_rgb_colors(k_max)
+    palette = Viridis256  # Palette de base (256 couleurs)
+
+    
+    
+    # Étendre la palette : concaténer avec une version inversée
+    palette_extended = palette + palette[::-1] + palette + palette[::-1] + palette + palette[::-1] + palette + palette[::-1]
+
+
+    # Conversion en RGB
+    palette_rgb = np.array([tuple(int(color[i:i+2], 16) for i in (1, 3, 5)) for color in palette_extended])
+
+    # Création des points de référence pour interpolation
+    x_palette = np.linspace(0, 1, len(palette_extended))
+    x_target = np.linspace(0, 1, k_max)
+
+    # Interpolation cubique pour assurer une transition fluide
+    interp_r = interp1d(x_palette, palette_rgb[:, 0], kind='cubic')
+    interp_g = interp1d(x_palette, palette_rgb[:, 1], kind='cubic')
+    interp_b = interp1d(x_palette, palette_rgb[:, 2], kind='cubic')
+
+    # Générer les couleurs interpolées
+    colors_rgb = np.stack([interp_r(x_target), interp_g(x_target), interp_b(x_target)], axis=1).astype(int)
+
+    # Conversion en format hexadécimal pour Bokeh
+    colors = ['#%02x%02x%02x' % tuple(rgb) for rgb in colors_rgb]
+    #gradient = generate_sampled_rgb_colors(k_max)
 
     # Créer de nouvelles positions et tailles pour les cercles
     for k in range(1, k_max+1):
@@ -95,7 +124,7 @@ def update_circles(attr, old, new):
         r.append(0.005 + 0.1*np.power(np.sin(52*np.pi*k/k_max), slider2.value))
 
     # Ajouter les nouveaux cercles au plot et stocker les GlyphRenderers
-    new_circles = plot.circle(x, y, radius=r, color="blue", alpha=0.6, fill_color=None, line_color=gradient, line_width=0.5)
+    new_circles = plot.circle(x, y, radius=r, color="blue", alpha=0.6, fill_color=None, line_color=colors, line_width=0.5)
     #new_dot = plot.circle_dot(x, y, alpha=0.6)
     
     # Circles est maintenant une liste des GlyphRenderers des cercles ajoutés
