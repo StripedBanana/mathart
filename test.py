@@ -3,10 +3,10 @@
 
 from bokeh.io import curdoc
 from bokeh.layouts import column
-from bokeh.models import Slider
+from bokeh.models import Slider, Select, ColumnDataSource
 from bokeh.plotting import figure
 from bokeh.io import export_svg
-from bokeh.palettes import Viridis256
+from bokeh.palettes import all_palettes
 from scipy.interpolate import interp1d
 
 from selenium import webdriver
@@ -17,11 +17,17 @@ x = []
 y = []
 r = []
 
-# Créer la figure
+# Créer les figures
 plot = figure(width=1200, height=1200, title="Cercles dynamiques", output_backend="svg", background_fill_color=None, border_fill_color=None)
 plot.xgrid.grid_line_color = None
 plot.ygrid.grid_line_color = None
 plot.axis.axis_line_color = None
+
+p_palette = figure(
+    title="Palette avant interpolation",
+    width=800, height=100, x_range=(0, 256),
+    toolbar_location=None, tools=""
+)
 
 def hex_to_rgb(hex_color):
     """Convertit une couleur hexadécimale en RGB."""
@@ -76,13 +82,16 @@ end_color = "#0000FF"    # Bleu
 
 # Créer une liste pour stocker les GlyphRenderers
 circles = []
+palettes_viz = []
 
 # Fonction pour générer les cercles
 def update_circles(attr, old, new):
     # Récupérer la nouvelle valeur de N
     k_max = slider.value
 
-    # Supprimer les cercles existants
+    # Supprimer les plot existants
+    for palette_viz in palettes_viz:
+        p_palette.renderers.remove(palette_viz)
     for circle in circles:
         plot.renderers.remove(circle)
 
@@ -90,13 +99,24 @@ def update_circles(attr, old, new):
     y.clear()
     r.clear()
 
-    palette = Viridis256  # Palette de base (256 couleurs)
+    # Obtenir la palette avec le maximum de couleurs disponibles
+    max_palette_size = max(all_palettes[palette_select.value].keys())
+    palette = all_palettes[palette_select.value][max_palette_size]
 
     
     
-    # Étendre la palette : concaténer avec une version inversée
-    palette_extended = palette + palette[::-1] + palette + palette[::-1] + palette + palette[::-1] + palette + palette[::-1]
+    # Étendre la palette : concaténer N fois avec une version inversée
+    palette_extended = palette + palette[::-1]
+    for i in range(1, slider3.value):
+        palette_extended += palette + palette[::-1]
 
+    # Figure pour afficher palette_extended
+    palette_length = len(palette_extended)
+    x_palette = np.arange(palette_length)
+    palette_source = ColumnDataSource(data=dict(x=x_palette, color=palette_extended))
+
+
+    palette_rect = p_palette.rect(x='x', y=0, width=1, height=1, source=palette_source, color='color', line_color=None)
 
     # Conversion en RGB
     palette_rgb = np.array([tuple(int(color[i:i+2], 16) for i in (1, 3, 5)) for color in palette_extended])
@@ -129,7 +149,9 @@ def update_circles(attr, old, new):
     
     # Circles est maintenant une liste des GlyphRenderers des cercles ajoutés
     circles.clear()  # Vider la liste
+    palettes_viz.clear()
     circles.append(new_circles)
+    palettes_viz.append(palette_rect)
     #circles.append(new_dot) # Ajouter les nouveaux cercles
 
 # Créer le slider pour changer la valeur de k_max
@@ -138,12 +160,25 @@ slider = Slider(start=1, end=14000, value=1000, step=1000, title="Nombre de cerc
 # Créer le slider pour changer la valeur de la puissance
 slider2 = Slider(start=1, end=6, value=4, step=1, title="Puissance")
 
+# Créer le slider pour changer la valeur de la puissance
+slider3 = Slider(start=1, end=10, value=3, step=1, title="Bouclage de la palette")
+
+# Menu déroulant pour sélectionner la palette
+palette_select = Select(title="Choisir une palette", value='Viridis', options=list(all_palettes.keys()))
+
+
+
+
+
 # Lier le slider à la fonction qui met à jour les cercles
 slider.on_change('value', update_circles)
 slider2.on_change('value', update_circles)
+slider3.on_change('value', update_circles)
+palette_select.on_change('value', update_circles)
+
 
 # Ajouter le slider et le graphique à l'interface
-layout = column(slider, slider2, plot)
+layout = column(slider, slider2, slider3, palette_select, p_palette, plot)
 
 # Exécuter la fonction initiale pour afficher les cercles au début
 update_circles(None, None, slider.value)
